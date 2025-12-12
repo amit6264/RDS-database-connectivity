@@ -1,0 +1,115 @@
+-------------------------step1----------------------
+create the ec2 with amzon Linux os server
+then connect to the server
+-- create rds database 
+----------------- creation of rds cache---------------
+select the rds go to actions click on create cache cluster 
+-- just give name and click on create it 
+---search for elastic cahe and open it 
+-----------click on redies oss caches
+------------open your cache and copy the cache endpoint with out port number 
+---------------------install the dependencyes-----------------
+sudo yum install mariadb105-server -y 
+sudo yum install python3-pip -y
+pip install pymysql redis	## dependencies for cache python file 
+
+--------------connect to your rds database from server -------------
+mysql -h <rdsendpoint> -u admin -p<rds-password>
+
+------------------create a database and table with below configuration 
+CREATE DATABASE test;
+
+USE test;
+
+CREATE TABLE users (
+    user_id VARCHAR(50) PRIMARY KEY,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    email VARCHAR(100)
+);
+
+INSERT INTO users (user_id, first_name, last_name, email)
+VALUES ('1245', 'John', 'Doe', 'john.doe@example.com');
+
+------------- crete cache.py file ---------- 
+######paste the  code 
+##### and change the rds credentials in Rds config section 
+########### and change elastic cache details in redis config section  according to your end--------
+###############################this is code #######################
+
+import pymysql
+import redis
+import json
+import sys
+
+# Redis config
+redis_client = redis.Redis(
+    host='database-1-cache-zfrbyv.serverless.eun1.cache.amazonaws.com',
+    port=6379,
+    ssl=True,  # Set to True for ElastiCache with TLS
+    decode_responses=True,
+    socket_timeout=5
+)
+
+# RDS config
+RDS_HOST = 'database-1.crma0qyygias.eu-north-1.rds.amazonaws.com'
+RDS_USER = 'admin'
+RDS_PASSWORD = 'admin1234'
+RDS_DB_NAME = 'test'
+TABLE_NAME = 'users'
+
+def fetch_data_from_rds():
+    try:
+        connection = pymysql.connect(
+            host=RDS_HOST,
+            user=RDS_USER,
+            password=RDS_PASSWORD,
+            database=RDS_DB_NAME
+        )
+        print("🔗 Connected to RDS")
+
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT * FROM {TABLE_NAME} LIMIT 10;")
+            rows = cursor.fetchall()
+            return rows
+
+    except Exception as e:
+        print("❌ RDS Error:", e)
+        return None
+
+    finally:
+        if 'connection' in locals():
+            connection.close()
+
+def main():
+    cache_key = 'cached_table_data'
+    bypass_cache = "--refresh" in sys.argv
+
+    if not bypass_cache:
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            print("✅ Fetched from Redis cache:")
+            print(json.loads(cached_data))
+            return
+
+    print("⚙️ No cache found or refresh requested. Fetching from RDS...")
+    data = fetch_data_from_rds()
+    if data:
+        redis_client.set(cache_key, json.dumps(data), ex=90)
+        print("📦 Cached in Redis:")
+        print(data)
+    else:
+        print("⚠️ No data fetched from RDS.")
+
+if __name__ == "__main__":
+    main()
+
+
+--------------------------------------------------------------after that run the file by using pythin3 cache.py -----------------------------
+python3 cache.py
+
+------now  first time your cache fetch the records form rds directly 
+---------run again now you will get the records from cache only 
+--------------- your rds cache is stored up to  90 sec 
+--------- in this 90 sec if we add new records in rds it wont refeleect in cache because cache wont take new records form rds upto 90 sec 
+----------after 90 sec cache fetch the what ever the new records added in the database it will be fetched  
